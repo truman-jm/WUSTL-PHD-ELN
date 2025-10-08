@@ -1,0 +1,38 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+
+dkm_df = pd.read_csv('DKMitoSummary.csv')
+
+## FIGURE 2A
+# Filter the DataFrame
+filtered_df = dkm_df[dkm_df['PercMitoPrey'] > 0].copy()
+
+# Sort the filtered DataFrame by PercMitoPrey in descending order
+filtered_df = filtered_df.sort_values(by='PercMitoPrey', ascending=False)
+
+# Create the bar chart
+plt.figure(figsize=(20, 8)) # Increased figure size
+plt.bar(filtered_df['Experiment.ID'], filtered_df['PercMitoPrey'])
+plt.xlabel('Experiment ID', fontsize=12) # Increased xlabel font size
+plt.ylabel('Percentage of Mitochondrial Prey', fontsize=12) # Increased ylabel font size
+plt.title('Percentage of Mitochondrial Prey by Experiment ID (PercMitoPrey > 0)', fontsize=14) # Increased title font size
+plt.xticks(rotation=90, fontsize=10) # Increased rotation and adjusted font size
+plt.tight_layout()
+
+## FIGURE 2B
+import matplotlib.pyplot as plt
+
+# Filter the DataFrame
+summ = dkm_df[dkm_df['PercMitoPrey'] > 0].copy()
+
+# Sort the filtered DataFrame by PercMitoPrey in descending order
+summ = summ.sort_values(by='PercMitoPhosphoPrey', ascending=False)
+
+# Create the bar chart
+plt.figure(figsize=(20, 8)) # Increased figure size
+plt.bar(summ['Experiment.ID'], summ['PercMitoPhosphoPrey'])
+plt.xlabel('Experiment ID', fontsize=12) # Increased xlabel font size
+plt.ylabel('Percentage of Mitochondrial Prey', fontsize=12) # Increased ylabel font size
+plt.title('Percentage of Mitochondrial Prey by Experiment ID (PercMitoPhosphoPrey > 0)', fontsize=14) # Increased title font size
+plt.xticks(rotation=90, fontsize=10) # Increased rotation and adjusted font size
+plt.tight_layout()
