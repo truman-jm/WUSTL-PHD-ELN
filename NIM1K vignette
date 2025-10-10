@@ -1,0 +1,173 @@
+import pandas as pd
+!pip install gprofiler-official
+from gprofiler import GProfiler
+g_pro = GProfiler(return_dataframe=True)
+
+prox = pd.read_csv('/content/prox_mc3_phos.csv')
+
+## This function gives you the gene ontologies of all the kinases in the df based on their prey.
+## gProfiler automatically filters out duplicates.
+## if gProfiler can't find any Gene ontologies, it returns a blank dataframe in my code. i.e. DRYK3
+def get_ontology (df):
+  if len(df['Bait.ID'].unique())>1:
+    all_kinaseOntology = {}
+    for bait in df['Bait.ID'].unique():
+      oneKinase = df[df["Bait.ID"]==bait]
+      prey = oneKinase["Prey.ID"].tolist()
+      ontologyDF = g_pro.profile(organism='hsapiens',query=prey)
+      all_kinaseOntology['Bait.ID'] = ontologyDF
+    return all_kinaseOntology
+  else:
+    oneKinase = df
+    prey = oneKinase["First_ID"].tolist()
+    ontologyDF = g_pro.profile(organism='hsapiens',query=prey)
+    return ontologyDF
+
+nim_ont = get_ontology(nim)
+
+## This generates the bar plot of NIM1K Prey ontology. 
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Get the top 30 rows based on p_value
+top_30_ont = nim_ont.head(30)
+
+# Calculate -log10 of p_value
+top_30_ont['-log10(p_value)'] = -np.log10(top_30_ont['p_value'])
+
+# Create Gene Ontology bar plot for all of NIM1K Prey. 
+plt.figure(figsize=(10, 8))
+plt.barh(top_30_ont['name'], top_30_ont['-log10(p_value)'])
+plt.xlabel('-log10(p_value)')
+plt.ylabel('Gene Ontology Term Name')
+plt.title('Top 30 Gene Ontology Terms by -log10(p_value) for NIM1K')
+plt.gca().invert_yaxis() # Invert y-axis to show the most significant terms at the top
+plt.tight_layout()
+plt.show()
+#####################################################################
+
+###### Add on Mitochondrial sublocalization and pathway annotation to NIM1K prey: 
+mc3 = pd.read_excel('/content/MitoCarta3.0 Proteins.xlsx')
+
+# Merge nim_short with mc3 based on 'First_ID' and 'UniProt'
+nim_info = nim_short.merge(mc3[['UniProt', 'MitoCarta3.0_SubMitoLocalization', 'MitoCarta3.0_MitoPathways']],
+                                        left_on='First_ID', right_on='UniProt', how='left')
+
+# Drop the redundant 'UniProt' column from the merged DataFrame
+nim_info = nim_info.drop('UniProt', axis=1)
+
+####### Create bar chart depicting NIM1K's prey sublocalization in the mitochondria: 
+import matplotlib.pyplot as plt
+
+# Count the occurrences of each sub-localization
+localization_counts = nim_info['MitoCarta3.0_SubMitoLocalization'].value_counts().sort_values(ascending=False)
+
+# Create a bar chart
+plt.figure(figsize=(10, 6))
+localization_counts.plot(kind='bar')
+plt.title('Counts of MitoCarta3.0 Sub-Mitochondrial Localizations for NIM1K Prey')
+plt.xlabel('Sub-Mitochondrial Localization')
+plt.ylabel('Count')
+plt.xticks(rotation=45, ha='right')
+plt.tight_layout()
+plt.show()
+
+def extract_short_pathways(pathway_string):
+    # Convert to string to handle potential non-string values like integers (e.g., 0)
+    pathway_string = str(pathway_string)
+    if pd.isna(pathway_string) or pathway_string == '0': # Handle NaN and '0' values after converting to string
+        return None
+    pathways = pathway_string.split('|')
+    short_pathways = []
+    for pathway in pathways:
+        parts = pathway.strip().split('>')
+        short_pathways.append(parts[-1].strip())
+    return ' | '.join(short_pathways)
+
+nim_info['MitoPathways Short'] = nim_info['MitoCarta3.0_MitoPathways'].apply(extract_short_pathways)
+
+import matplotlib.pyplot as plt
+
+# Count the occurrences of each short pathway
+short_pathway_counts = nim_info['MitoPathways Short'].value_counts().sort_values(ascending=True)
+
+# Select top 20 short pathways for better visualization
+top_n = 20
+short_pathway_counts_top_n = short_pathway_counts.tail(top_n)
+
+# Create a horizontal bar chart
+plt.figure(figsize=(12, 10)) # Adjusted figure size for more labels
+short_pathway_counts_top_n.plot(kind='barh')
+plt.title(f'Top {top_n} Simplified MitoCarta3.0 Mitochondrial Pathways for NIM1K Prey')
+plt.xlabel('Count')
+plt.ylabel('Mitochondrial Pathway')
+plt.tight_layout()
+plt.show()
+
+#####################################################
+#########################################################
+###########Perform Analysis on NIM1K predicted phospho substrates 
+nim_phospho = nim[['Experiment.ID', 'Bait.ID', 'PreyGene','First_ID','Protein names','BaitInMito',
+       'PreyInMito','BaitPredSite', 'BaitKnownSite',
+       'MatchingSite', 'AllKnownSites', 'AllKnownKinasesNames',
+       'AllKnownKinasesIDs']]
+
+nim_phos_info = nim_phospho.merge(mc3[['UniProt', 'MitoCarta3.0_SubMitoLocalization', 'MitoCarta3.0_MitoPathways']],
+                                        left_on='First_ID', right_on='UniProt', how='left')
+
+# Drop the redundant 'UniProt' column from the merged DataFrame
+nim_phos_info = nim_phos_info.drop('UniProt', axis=1)
+
+nim_phos_info = nim_phos_info[nim_phos_info['PreyInMito']==True]
+
+# Filter for rows where either BaitPredSite or BaitKnownSite has a value
+nim_phospho = nim_phos_info[nim_phos_info['BaitPredSite'].notna() | nim_phos_info['BaitKnownSite'].notna()]
+
+############Create bar chart of the destination of NIM1K's predicted substrates: 
+import matplotlib.pyplot as plt
+
+# Count the occurrences of each sub-localization in the filtered data
+phospho_localization_counts = nim_phospho['MitoCarta3.0_SubMitoLocalization'].value_counts().sort_values(ascending=False)
+
+# Create a bar chart
+plt.figure(figsize=(10, 6))
+phospho_localization_counts.plot(kind='bar')
+plt.title('Counts of MitoCarta3.0 Sub-Mitochondrial Localizations for Phosphorylated NIM1K Prey')
+plt.xlabel('Sub-Mitochondrial Localization')
+plt.ylabel('Count')
+plt.xticks(rotation=45, ha='right')
+plt.tight_layout()
+plt.show()
+
+########################## Create bar chart with pathways for NIM1K's predicted substrate
+def extract_short_pathways(pathway_string):
+    if pd.isna(pathway_string) or pathway_string == '0': # Handle NaN and '0' values
+        return None
+    pathways = pathway_string.split('|')
+    short_pathways = []
+    for pathway in pathways:
+        parts = pathway.strip().split('>')
+        short_pathways.append(parts[-1].strip())
+    return ' | '.join(short_pathways)
+
+# Create a copy to avoid SettingWithCopyWarning
+nim_phospho = nim_phospho.copy()
+nim_phospho['MitoPathways Short'] = nim_phospho['MitoCarta3.0_MitoPathways'].apply(extract_short_pathways)
+
+import matplotlib.pyplot as plt
+
+# Count the occurrences of each pathway in the filtered data
+phospho_pathway_counts = nim_phospho['MitoPathways Short'].value_counts().sort_values(ascending=True) # Sort ascending for better display in horizontal bar chart
+
+# Select top N pathways for better visualization (optional, adjust N as needed)
+top_n = 10
+phospho_pathway_counts_top_n = phospho_pathway_counts.tail(top_n) # Use tail to get the top N for horizontal plot
+
+# Create a horizontal bar chart
+plt.figure(figsize=(12, 8))
+phospho_pathway_counts_top_n.plot(kind='barh') # Changed to barh for horizontal plot
+plt.title(f'Top {top_n} MitoCarta3.0 Mitochondrial Pathways for Phosphorylated NIM1K Prey')
+plt.xlabel('Count') # Swapped x and y labels
+plt.ylabel('Mitochondrial Pathway')
+plt.tight_layout()
+plt.show()
