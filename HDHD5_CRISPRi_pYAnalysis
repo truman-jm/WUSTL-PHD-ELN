@@ -1,0 +1,33 @@
+import pandas as pd
+import re
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+
+df = pd.read_excel('/content/202510_HDHD5_Screen_Phos.xlsx')
+
+def contains_tyrosine(phospho_string):
+  """Checks if a string contains 'Y' within square brackets."""
+  if isinstance(phospho_string, str):
+    return bool(re.search(r'\[.*?Y.*?\]', phospho_string))
+  return False
+
+df['Tryosine'] = df['phospho'].apply(contains_tyrosine)
+
+# Create a volcano plot
+plt.figure(figsize=(10, 8))
+sns.scatterplot(data=df, x='log2fc_normProt2', y=-np.log10(df['p_value_normProt']), alpha=0.5, label='All Proteins')
+
+# Highlight proteins with "yes" in MitoCarta3
+mito_proteins = df[df['MitoCarta3'] == 'yes']
+sns.scatterplot(data=mito_proteins, x='log2fc_normProt2', y=-np.log10(mito_proteins['p_value_normProt']), color='orange', label='MitoCarta3 Proteins')
+# Highlight proteins with "yes" in MitoCarta3 and "True" in Tryosine
+mito_tyrosine_proteins = df[(df['MitoCarta3'] == 'yes') & (df['Tryosine'] == True)]
+sns.scatterplot(data=mito_tyrosine_proteins, x='log2fc_normProt2', y=-np.log10(mito_tyrosine_proteins['p_value_normProt']), color='red', label='MitoCarta3 & Tyrosine Proteins')
+
+# Add labels and title
+plt.xlabel('log2 Fold Change')
+plt.ylabel('-log10(p-value)')
+plt.title('HDHD5 CRISPRi')
+plt.legend()
+plt.show()

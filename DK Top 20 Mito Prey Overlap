@@ -1,0 +1,47 @@
+import pandas as pd
+prox = pd.read_csv('/content/prox_mc3_phos.csv')
+summary = pd.read_csv('/content/DKMitoSummary.csv')
+summary_rank = summary.sort_values(by='PercMitoPrey', ascending=False)
+top_20 = summary_rank.head(20)
+top = list(top_20['Bait.ID'])
+prox_top = prox[prox['Bait.ID'].isin(top)]
+# Filter prox_mc3 to keep rows where 'Bait.ID' is in the 'top' list
+prox_top_baits = prox_top[prox_top['PreyInMito']==True]
+
+
+###### GENERATES HEAT MAP OF HOW MUCH OVERLAP ARE THE MITOCHONDRIAL PREY ARE SIMILAR TO E
+
+import seaborn as sns
+import numpy as np
+import matplotlib.pyplot as plt # Import matplotlib.pyplot
+
+# Get unique Experiment.IDs from the filtered dataframe
+experiment_ids = prox_top_baits['Experiment.ID'].unique()
+
+# Create a matrix to store similarity percentages
+similarity_matrix = pd.DataFrame(index=experiment_ids, columns=experiment_ids)
+
+# Calculate similarity for each pair of Experiment.IDs
+for exp1 in experiment_ids:
+    for exp2 in experiment_ids:
+        set1 = set(prox_top_baits[prox_top_baits['Experiment.ID'] == exp1]['First_ID'])
+        set2 = set(prox_top_baits[prox_top_baits['Experiment.ID'] == exp2]['First_ID'])
+        intersection_size = len(set1.intersection(set2))
+        union_size = len(set1.union(set2))
+        # Calculate Jaccard index (similarity)
+        similarity = intersection_size / union_size if union_size != 0 else 0
+        similarity_matrix.loc[exp1, exp2] = similarity
+
+# Convert to numeric, coercing errors
+similarity_matrix = similarity_matrix.apply(pd.to_numeric, errors='coerce')
+
+# Create the heatmap
+plt.figure(figsize=(12, 10))
+sns.heatmap(similarity_matrix, annot=True, fmt='.2f', cmap='viridis') # Format to 2 decimal places for percentage
+plt.title('Similarity of First_IDs between Top Experiment.IDs (Jaccard Index)')
+plt.xlabel('Experiment.ID')
+plt.ylabel('Experiment.ID')
+plt.xticks(rotation=90)
+plt.yticks(rotation=0)
+plt.tight_layout()
+plt.show()
