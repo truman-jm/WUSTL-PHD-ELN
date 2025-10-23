@@ -192,4 +192,203 @@ for sample_type in df_grouped_no_G['Sample_Type'].unique():
 
 plt.show()
 ################################################################################################
-#### FIGURE 6 LIPIDOMICS ############
+#### FIGURE 6 Yeast LIPIDOMICS comparing my lipidomics to Y3K ############
+import pandas as pd
+## Prior to importing this file, I manually identified CoQ8 and changed the KeepID to True. 
+df = pd.read_csv('YKR_DegreaserResults.csv') ## This is the output file for my yeast lipidomcis 
+# Rename columns
+df = df.rename(columns={
+    '20251016_W303_1.raw (F1)': 'WT_1',
+    '20251016_W303_2.raw (F2)': 'WT_2',
+    '20251016_W303_3.raw (F3)': 'WT_3',
+    '20251016_YKR070W_1.raw (F4)': 'YKR_1',
+    '20251016_YKR070W_2.raw (F5)': 'YKR_2',
+    '20251016_YKR070W_3.raw (F6)': 'YKR_3',
+    'Blank_20251017070019.raw (F7)': 'Blank_1',
+    'Blank_20251017094956.raw (F8)': 'Blank_2',
+    'Blank_20251017115707.raw (F9)': 'Blank_3'
+})
+df = df[df['KeepID'] == True]
+df['Is_Duplicate'] = df.duplicated(subset=['Annotation'], keep=False)
+
+## Drop innacurate duplicates. 
+df_no_duplicates = df.sort_values(by=['Annotation', 'RTpredictionDifference']).drop_duplicates(subset=['Annotation'], keep='first')
+dropped_rows = df[~df.index.isin(df_no_duplicates.index)]
+duplicates = df[df['Is_Duplicate'] == True]
+duplicates_sorted = duplicates.sort_values(by=['Annotation', 'RTpredictionDifference'])
+df = df_no_duplicates
+
+## Scale according to CoQ8 values
+coq8_row = df[df['Annotation']=='CoQ8']
+wt_cols = ['WT_1', 'WT_2', 'WT_3']
+ykr_cols = ['YKR_1', 'YKR_2', 'YKR_3']
+
+coq8_avg = coq8_row[wt_cols + ykr_cols].mean(axis=1).iloc[0]
+print(coq8_avg)
+wt_sf = coq8_avg /coq8_row[wt_cols]
+ykr_sf = coq8_avg / coq8_row[ykr_cols]
+
+# Create a new DataFrame for scaled data, copying the original
+df_scaled = df.copy()
+
+# Apply scaling factors to WT columns
+for col in wt_cols:
+    df_scaled[col] = df_scaled[col] * wt_sf[col].iloc[0]
+
+# Apply scaling factors to YKR columns
+for col in ykr_cols:
+    df_scaled[col] = df_scaled[col] * ykr_sf[col].iloc[0]display(ykr_sf)
+
+#### Log 2 transform values 
+import numpy as np
+
+# Create a new DataFrame for log2-transformed data, copying the blank-removed DataFrame
+df_log2_transformed = df_scaled.copy()
+
+# Identify WT and YKR columns from the blank-removed DataFrame
+wt_cols_blank_removed = [col for col in df_scaled.columns if 'WT_' in col]
+ykr_cols_blank_removed = [col for col in df_scaled.columns if 'YKR_' in col]
+
+# Apply log2 transformation to WT and YKR columns, handling non-positive values
+for col in wt_cols_blank_removed + ykr_cols_blank_removed:
+    # Replace non-positive values with NaN before log2 transformation
+    df_log2_transformed[col] = df_log2_transformed[col].replace(0, np.nan) # Replace 0 with NaN
+    df_log2_transformed[col] = df_log2_transformed[col].apply(lambda x: np.nan if x < 0 else x) # Replace negative with NaN
+    df_log2_transformed[col] = np.log2(df_log2_transformed[col])
+
+##### Calcuate log2 fc 
+# Calculate the average of WT columns and create a new column 'WT_average'
+wt_cols_log2 = [col for col in df_log2_transformed.columns if 'WT_' in col and col != 'WT_average']
+df_log2_transformed['WT_average'] = df_log2_transformed[wt_cols_log2].mean(axis=1)
+
+# Calculate the average of YKR columns and create a new column 'YKR_average'
+ykr_cols_log2 = [col for col in df_log2_transformed.columns if 'YKR_' in col and col != 'YKR_average']
+df_log2_transformed['YKR_average'] = df_log2_transformed[ykr_cols_log2].mean(axis=1)
+
+# Calculate the Log2 fold change and create a new column 'Log2fc'
+df_log2_transformed['Log2fc'] = df_log2_transformed['YKR_average'] - df_log2_transformed['WT_average']
+
+# Display the first few rows of the DataFrame with the new columns
+display(df_log2_transformed.head())
+
+########Create p value and adj p val
+from scipy.stats import ttest_ind
+from statsmodels.sandbox.stats.multicomp import multipletests
+import numpy as np
+
+# Create new columns for p-value and adjusted p-value
+df_log2_transformed['pval'] = np.nan
+df_log2_transformed['adj_pval'] = np.nan
+
+# Identify WT and YKR columns
+wt_cols_log2 = [col for col in df_log2_transformed.columns if 'WT_' in col and col != 'WT_average']
+ykr_cols_log2 = [col for col in df_log2_transformed.columns if 'YKR_' in col and col != 'YKR_average']
+
+# Convert relevant columns to numeric, coercing errors to NaN
+for col in wt_cols_log2 + ykr_cols_log2:
+    df_log2_transformed[col] = pd.to_numeric(df_log2_transformed[col], errors='coerce')
+
+
+# Perform t-test for each row and store the p-value
+for index, row in df_log2_transformed.iterrows():
+    # Drop NaN values and convert to numpy array before performing t-test
+    wt_data = row[wt_cols_log2].dropna().to_numpy(dtype=float)
+    ykr_data = row[ykr_cols_log2].dropna().to_numpy(dtype=float)
+
+    # Ensure there are enough data points to perform t-test
+    if len(wt_data) >= 2 and len(ykr_data) >= 2:
+        t_stat, p_val = ttest_ind(wt_data, ykr_data, equal_var=False) # Using Welch's t-test
+        df_log2_transformed.loc[index, 'pval'] = p_val
+    else:
+        df_log2_transformed.loc[index, 'pval'] = np.nan # Set p-value to NaN if not enough data
+
+# Apply Benjamini-Hochberg correction for multiple testing
+# Filter out rows with NaN p-values before correction
+valid_pvals = df_log2_transformed['pval'].dropna()
+if not valid_pvals.empty:
+    reject, pvals_corrected, _, _ = multipletests(valid_pvals, method='fdr_bh') # FDR - BH correction
+
+    # Map the corrected p-values back to the original DataFrame
+    df_log2_transformed.loc[valid_pvals.index, 'adj_pval'] = pvals_corrected
+
+#### Create W303 Volcano plot. 
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+
+# Create volcano plot
+plt.figure(figsize=(10, 8))
+sns.scatterplot(data=df_log2_transformed, x='Log2fc', y=-np.log10(df_log2_transformed['pval']), alpha=0.5)
+
+# Add labels and title
+plt.xlabel('Log2 Fold Change')
+plt.ylabel('-log10(p-value)')
+plt.title('YKR070W W303')
+
+# Label points with Log2 fold change > 1
+highlight_df = df_log2_transformed[abs(df_log2_transformed['Log2fc']) > .4]
+texts = []
+for i, row in highlight_df.iterrows():
+    texts.append(plt.text(row['Log2fc'], -np.log10(row['pval']), row['Annotation']))
+
+plt.grid(True)
+plt.show()
+########## This is Figure 6B, which is imported from Y3K, YKR070W Lipidomics data. 
+y3k_df = pd.read_csv('Y3K_Perturbations_YKR070W_Respiration-RDR.csv')
+y3k_df = y3k_df[y3k_df['Molecule Type']=='LIPID']
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+
+# Create volcano plot
+plt.figure(figsize=(10, 8))
+sns.scatterplot(data=y3k_df, x='∆LFQ', y=-np.log10(y3k_df['P-Value']), alpha=0.5)
+
+# Add labels and title
+plt.xlabel('∆LFQ')
+plt.ylabel('-log10(p-value)')
+plt.title('Y3K-YKR070W BY4742')
+
+# Label points with Log2 fold change > 1
+highlight_df = y3k_df[abs(y3k_df['∆LFQ']) > .4]
+texts = []
+for i, row in highlight_df.iterrows():
+    texts.append(plt.text(row['∆LFQ'], -np.log10(row['P-Value']), row['Molecule Name']))
+
+plt.grid(True)
+plt.show()
+
+
+##### This compares the fc of lipid classes between Y3K and my lipidomics data. 
+import re
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+y3k_df['LipidClass'] = y3k_df['Molecule Name'].apply(lambda x: re.sub(r'\(.*\)', '', x).strip())
+
+
+# Select relevant columns from df_log2_transformed and rename 'Log2fc' to 'Value'
+df1_subset = df_log2_transformed[['LipidClass', 'Log2fc']].copy()
+df1_subset = df1_subset.rename(columns={'Log2fc': 'Value'})
+df1_subset['Dataset'] = 'W303'
+
+# Select relevant columns from y3k_df and rename '∆LFQ' to 'Value'
+df2_subset = y3k_df[['LipidClass', '∆LFQ']].copy()
+df2_subset = df2_subset.rename(columns={'∆LFQ': 'Value'})
+df2_subset['Dataset'] = 'BY4742'
+
+# Rename LPC to LysoPC in df2_subset
+df2_subset['LipidClass'] = df2_subset['LipidClass'].replace('LPC', 'LysoPC')
+
+# Combine the two subsets
+combined_df = pd.concat([df1_subset, df2_subset])
+
+# Create the combined boxplot
+plt.figure(figsize=(12, 8))
+sns.boxplot(data=combined_df, x='Value', y='LipidClass', hue='Dataset')
+sns.stripplot(data=combined_df, x='Value', y='LipidClass', hue='Dataset', size=4, jitter=True, dodge=True, linewidth=1, edgecolor='black')
+plt.xlabel('Fold Change (Log2fc for W303, ∆LFQ for BY4742)')
+plt.ylabel('Lipid Class')
+plt.title('Fold Change by Lipid Class - YKR070W v.s. WT (W303-This Experiment / BY4742-Y3K)')
+plt.grid(True)
+plt.show()
