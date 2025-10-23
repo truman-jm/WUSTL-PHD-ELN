@@ -132,3 +132,64 @@ plt.tight_layout()
 plt.show()
 
 ########################################
+##### THIS CODE WAS USED TO CREATE FIGURE 5A-C. For the 2 growth assay curves. inos auxo analysis sheet is taken from teh raw data from sean. 
+import pandas as pd
+df = pd.read_excel('inos auxo analysis.xlsx')
+column_mapping = {
+    'F1': 'WT_YPD_1', 'F2': 'WT_YPD_2', 'F3': 'WT_YPD_3',
+    'F4': 'YKR_YPD_1', 'F5': 'YKR_YPD_2', 'F6': 'YKR_YPD_3',
+    'F7': 'WT_YPDG_1', 'F8': 'WT_YPDG_2', 'F9': 'WT_YPDG_3',
+    'F10': 'YKR_YPDG_1', 'F11': 'YKR_YPDG_2', 'F12': 'YKR_YPDG_3',
+    'G1': 'WT_SCD_1', 'G2': 'WT_SCD_2', 'G3': 'WT_SCD_3',
+    'G4': 'YKR_SCD_1', 'G5': 'YKR_SCD_2', 'G6': 'YKR_SCD_3',
+    'G7': 'WT_SCDG_1', 'G8': 'WT_SCDG_2', 'G9': 'WT_SCDG_3',
+    'G10': 'YKR_SCDG_1', 'G11': 'YKR_SCDG_2', 'G12': 'YKR_SCDG_3',
+    'H1': 'WT_SCD-inos+chol_1', 'H2': 'WT_SCD-inos+chol_2', 'H3': 'WT_SCD-inos+chol_3',
+    'H4': 'YKR_SCD-inos+chol_1', 'H5': 'YKR_SCD-inos+chol_2', 'H6': 'YKR_SCD-inos+chol_3',
+    'H7': 'WT_SCDG-inos+chol_1', 'H8': 'WT_SCDG-inos+chol_2', 'H9': 'WT_SCDG-inos+chol_3',
+    'H10': 'YKR_SCDG-inos+chol_1', 'H11': 'YKR_SCDG-inos+chol_2', 'H12': 'YKR_SCDG-inos+chol_3'
+}
+
+df.rename(columns=column_mapping, inplace=True)
+
+df_melted = df.melt(id_vars=['Time'], var_name='variable', value_name='value')
+df_melted['Sample_Type'] = df_melted['variable'].apply(lambda x: '_'.join(x.split('_')[:-1]))
+df_melted['Time'] = pd.to_timedelta(df_melted['Time'].astype(str))
+df_grouped = df_melted.groupby(['Time', 'Sample_Type'])['value'].mean().reset_index()
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Separate data into two groups based on 'G' in Sample_Type
+df_grouped_G = df_grouped[df_grouped['Sample_Type'].str.contains('G')].copy()
+df_grouped_no_G = df_grouped[~df_grouped['Sample_Type'].str.contains('G')].copy()
+
+# Plot for sample types with 'G'
+plt.figure(figsize=(12, 8))
+ax_G = sns.lineplot(data=df_grouped_G, x='Time', y='value', hue='Sample_Type', legend=False)
+plt.title('Average Growth Over Time for Sample Types-Respiration')
+plt.xlabel('Time')
+plt.ylabel('Average Growth')
+
+# Add labels to the lines for 'G' group
+for sample_type in df_grouped_G['Sample_Type'].unique():
+    last_data_point = df_grouped_G[df_grouped_G['Sample_Type'] == sample_type].iloc[-1]
+    ax_G.text(last_data_point['Time'].total_seconds(), last_data_point['value'], sample_type, fontsize=9, verticalalignment='bottom')
+
+plt.show()
+
+# Plot for sample types without 'G'
+plt.figure(figsize=(12, 8))
+ax_no_G = sns.lineplot(data=df_grouped_no_G, x='Time', y='value', hue='Sample_Type', legend=False)
+plt.title('Average Growth Over Time for Sample Types-Fermentation')
+plt.xlabel('Time')
+plt.ylabel('Average Growth')
+
+# Add labels to the lines for no 'G' group
+for sample_type in df_grouped_no_G['Sample_Type'].unique():
+    last_data_point = df_grouped_no_G[df_grouped_no_G['Sample_Type'] == sample_type].iloc[-1]
+    ax_no_G.text(last_data_point['Time'].total_seconds(), last_data_point['value'], sample_type, fontsize=9, verticalalignment='bottom')
+
+plt.show()
+################################################################################################
+#### FIGURE 6 LIPIDOMICS ############
