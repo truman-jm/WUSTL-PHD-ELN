@@ -1,1 +1,314 @@
+import pandas as pd
+rescue = pd.read_csv('/content/HAP1_Rescue_DegreaserResults.csv')
+# Rename columns
+rescue = rescue.rename(columns={
+    '20251016_HAP1_CECR5-2_1.raw (F1)': 'KO_1',
+    '20251016_HAP1_CECR5-2_2.raw (F2)': 'KO_2',
+    '20251016_HAP1_CECR5-2_3.raw (F3)': 'KO_3',
+    '20251016_HAP1_CECR5-2_D52A_1.raw (F4)': 'KO_D-A_1',
+    '20251016_HAP1_CECR5-2_D52A_2.raw (F5)': 'KO_D-A_2',
+    '20251016_HAP1_CECR5-2_D52A_3.raw (F6)': 'KO_D-A_3',
+    '20251016_HAP1_CECR5-2_EV_1.raw (F7)': 'KO_EV_1',
+    '20251016_HAP1_CECR5-2_EV_2.raw (F8)': 'KO_EV_2',
+    '20251016_HAP1_CECR5-2_EV_3.raw (F9)': 'KO_EV_3',
+    '20251016_HAP1_CECR5-2_WTrescue_1.raw (F10)': 'KO_WT_1',
+    '20251016_HAP1_CECR5-2_WTrescue_2.raw (F11)': 'KO_WT_2',
+    '20251016_HAP1_CECR5-2_WTrescue_3.raw (F12)': 'KO_WT_3',
+    '20251016_HAP1_WT_1.raw (F13)': 'WT_1',
+    '20251016_HAP1_WT_2.raw (F14)': 'WT_2',
+    '20251016_HAP1_WT_D52A_1.raw (F15)': 'WT_D-A_1',
+    '20251016_HAP1_WT_D52A_2.raw (F16)': 'WT_D-A_2',
+    '20251016_HAP1_WT_D52A_3.raw (F17)': 'WT_D-A_3',
+    '20251016_HAP1_WT_EV2.raw (F18)': 'WT_EV_2',
+    '20251016_HAP1_WT_EV3.raw (F19)': 'WT_EV_3',
+    '20251016_HAP1_WT_WTrescue_1.raw (F20)': 'WT_WT_1',
+    '20251016_HAP1_WT_WTrescue_2.raw (F21)': 'WT_WT_2',
+    '20251016_HAP1_WT_WTrescue_3.raw (F22)': 'WT_WT_3'
+})
 
+q8_rows = rescue[rescue['Annotation']=='CoQ8']
+q8_rows = q8_rows[['KO_1', 'KO_2', 'KO_3',
+       'KO_D-A_1', 'KO_D-A_2', 'KO_D-A_3', 'KO_EV_1', 'KO_EV_2', 'KO_EV_3',
+       'KO_WT_1', 'KO_WT_2', 'KO_WT_3', 'WT_1', 'WT_2', 'WT_D-A_1', 'WT_D-A_2',
+       'WT_D-A_3', 'WT_EV_2', 'WT_EV_3', 'WT_WT_1', 'WT_WT_2', 'WT_WT_3']]
+
+sample_columns_all = ['KO_1', 'KO_2', 'KO_3',
+       'KO_D-A_1', 'KO_D-A_2', 'KO_D-A_3', 'KO_EV_1', 'KO_EV_2', 'KO_EV_3',
+       'KO_WT_1', 'KO_WT_2', 'KO_WT_3', 'WT_1', 'WT_2', 'WT_D-A_1', 'WT_D-A_2',
+       'WT_D-A_3', 'WT_EV_2', 'WT_EV_3', 'WT_WT_1', 'WT_WT_2', 'WT_WT_3']
+
+def coq8_norm (df, sample_columns):
+  df = df[df['KeepID'] == True].copy() # Explicitly create a copy
+  df['Is_Duplicate'] = df.duplicated(subset=['Annotation'], keep=False)
+  df_no_duplicates = df.sort_values(by=['Annotation', 'RTpredictionDifference']).drop_duplicates(subset=['Annotation'], keep='first')
+  dropped_rows = df[~df.index.isin(df_no_duplicates.index)]
+  duplicates = df[df['Is_Duplicate'] == True]
+  duplicates_sorted = duplicates.sort_values(by=['Annotation', 'RTpredictionDifference'])
+  df = df_no_duplicates
+  coq8_row = df[df['Annotation']=='CoQ8']
+
+  if not coq8_row.empty:
+    coq8_avg = coq8_row[sample_columns].mean(axis=1).iloc[0]
+    print(coq8_avg)
+    sf = coq8_avg /coq8_row[sample_columns]
+    display(sf)
+
+    # Create a new DataFrame for scaled data, copying the processed DataFrame
+    df_scaled = df.copy()
+
+    # Apply scaling factors to sample columns
+    for col in sample_columns:
+        df_scaled[col] = df_scaled[col] * sf[col].iloc[0]
+
+  return sf, df_scaled # Return scaling factors and the scaled dataframe
+
+###### Calculate scaling factors for all of the samples
+# Assign the returned values to variables
+scaling_factors_bad, q8_norm_bad = coq8_norm(rescue,sample_columns_all)
+
+sample_columns = ['KO_1', 'KO_2',
+       'KO_D-A_1', 'KO_D-A_3', 'KO_EV_1', 'KO_EV_2', 'KO_EV_3',
+       'KO_WT_1', 'KO_WT_3', 'WT_2', 'WT_D-A_2',
+       'WT_D-A_3', 'WT_EV_2', 'WT_EV_3', 'WT_WT_2', 'WT_WT_3']
+
+###### Calculate scaling factors for the non noisy samples. 
+sf, q8_norm = coq8_norm(rescue,sample_columns)
+
+####### Make the plot comparing scaling factors ######
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd # Import pandas
+
+# Melt the dataframes for plotting
+sf_bad_melted = scaling_factors_bad.melt(var_name='Sample', value_name='Scaling Factor')
+sf_melted = sf.melt(var_name='Sample', value_name='Scaling Factor')
+
+# Add a 'Dataset' column to distinguish between the two dataframes
+sf_bad_melted['Dataset'] = 'All Samples'
+sf_melted['Dataset'] = 'With Samples Dropped'
+
+# Concatenate the melted dataframes
+combined_sf = pd.concat([sf_bad_melted, sf_melted])
+
+# Create the boxplot with only two boxes
+plt.figure(figsize=(8, 6)) # Adjusted figure size
+sns.boxplot(data=combined_sf, x='Dataset', y='Scaling Factor') # Changed x-axis to 'Dataset'
+sns.stripplot(data=combined_sf, x='Dataset', y='Scaling Factor', color='black', size=4, jitter=True) # Add stripplot
+
+# Add labels and title
+plt.xlabel('Dataset') # Changed x-axis label
+plt.ylabel('Scaling Factor')
+plt.title('CoQ8 Normalization Scaling Factors') # Changed title
+plt.tight_layout() # Adjust layout to prevent labels overlapping
+plt.grid(axis='y')
+plt.show()
+
+
+##### MAKE CoQ8 Raw Abundances bar chart #########
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Melt the q8_rows DataFrame for plotting
+q8_melted = q8_rows.melt(var_name='Sample', value_name='Value')
+
+# Define columns to drop and create a list of columns to keep
+cols_to_drop = ['KO_3', 'KO_WT_2', 'WT_1', 'WT_D-A_1','KO_D-A_2',"WT_WT_1"]
+cols_to_keep = [col for col in q8_rows.columns if col not in cols_to_drop]
+
+# Reorder samples in melted DataFrame
+q8_melted['Sample'] = pd.Categorical(q8_melted['Sample'], categories=cols_to_keep + cols_to_drop, ordered=True)
+q8_melted = q8_melted.sort_values('Sample')
+
+# Create a custom color palette
+palette = ['steelblue' if col in cols_to_keep else 'gray' for col in q8_melted['Sample'].unique()]
+
+
+# Create the bar plot
+plt.figure(figsize=(12, 6))
+sns.barplot(data=q8_melted, x='Sample', y='Value', palette=palette)
+
+# Add labels and title
+plt.xlabel('Sample')
+plt.ylabel('Raw Abundance')
+plt.title('Raw CoQ8 Abundance Across Samples')
+plt.xticks(rotation=45, ha='right') # Rotate x-axis labels for better readability
+plt.tight_layout() # Adjust layout to prevent labels overlapping
+plt.grid(axis='y')
+plt.show()
+
+
+#### MAKE PCA PLOT #########
+q8_norm = q8_norm.drop(columns=cols_to_drop)
+
+q8_data = q8_norm[sample_columns]
+q8_data = q8_data.drop(columns=['WT_2'])
+display(q8_data.head())
+
+pca_columns = ['KO_1', 'KO_2', 'KO_D-A_1', 'KO_D-A_3', 'KO_EV_1', 'KO_EV_2', 'KO_EV_3',
+       'KO_WT_1', 'KO_WT_3', 'WT_D-A_2', 'WT_D-A_3', 'WT_EV_2', 'WT_EV_3',
+       'WT_WT_2', 'WT_WT_3']
+
+
+print("Missing values per column in q8_data:")
+print(q8_data.isnull().sum())
+
+from sklearn.preprocessing import StandardScaler
+
+scaler = StandardScaler()
+q8_scaled = scaler.fit_transform(q8_data)
+q8_scaled = pd.DataFrame(q8_scaled, columns=pca_columns)
+display(q8_scaled.head())
+
+from sklearn.decomposition import PCA
+
+pca = PCA(n_components=2)
+# Transpose the data so that PCA is performed on samples (columns) instead of metabolites (rows)
+q8_pca = pca.fit_transform(q8_scaled.T)
+q8_pca = pd.DataFrame(q8_pca, index=q8_scaled.columns, columns=['PC1', 'PC2'])
+display(q8_pca.head())
+
+
+plt.figure(figsize=(12, 10))
+plt.scatter(q8_pca['PC1'], q8_pca['PC2'])
+plt.xlabel(f'Principal Component 1 ({pca.explained_variance_ratio_[0]*100:.2f}%)')
+plt.ylabel(f'Principal Component 2 ({pca.explained_variance_ratio_[1]*100:.2f}%)')
+plt.title('PCA of Normalized Lipidomics Data (With Noisy Samples Removed)')
+plt.grid(True)
+
+# Add labels for each data point
+for i, txt in enumerate(q8_pca.index):
+    plt.annotate(txt, (q8_pca['PC1'].iloc[i], q8_pca['PC2'].iloc[i]), textcoords="offset points", xytext=(0,5), ha='center')
+
+plt.show()
+
+####### LOG2 FC Everything for downstream analysis ###############
+
+import numpy as np
+
+def log2 (df,sample_columns):
+  # Create a new DataFrame for log2-transformed data, copying the original
+  df_log2_transformed = df.copy()
+
+  # Apply log2 transformation to sample columns, handling non-positive values
+  for col in sample_columns:
+      # Replace non-positive values with NaN before log2 transformation
+      df_log2_transformed[col] = df_log2_transformed[col].replace(0, np.nan) # Replace 0 with NaN
+      df_log2_transformed[col] = df_log2_transformed[col].apply(lambda x: np.nan if x < 0 else x) # Replace negative with NaN
+      df_log2_transformed[col] = np.log2(df_log2_transformed[col])
+
+  return df_log2_transformed
+
+  q8_norm_log2 = log2(q8_norm,pca_columns)
+  q8_norm_log2 = q8_norm_log2.drop(columns=['WT_2'])
+  q8_norm_log2.to_csv('q8_norm_log2.csv', index=False)
+########################END ANALYSIS NOTEBOOK########################################
+
+##########################BEGIN ANALYSIS NOTEBOOK ########################################
+
+import pandas as pd
+df = pd.read_csv('/content/q8_norm_log2.csv')
+df = df[['KeepID', 'KeepQuantitation', 'UserComment', 'Annotation', 'RT',
+       'LipidClass', 'LipidSumComposition', 'mz', 'FilterReasons',
+       'RTpredicted', 'RTpredictionDifference', 'Adduct', 'Polarity',
+       'ppmError', 'NumFattyAcylCarbons', 'NumFattyAcylUnsaturations',
+       'MaxArea', 'MedianArea', 'MaxDotProduct', 'AvgDotProduct',
+       'MaxReverseDotProduct', 'AvgReverseDotProduct', 'FoundInNFiles',
+       'PeakPurityPercent', 'AvgFWHM', 'NumSpectralMatches',
+       'SpectralMatchesUniqueIndexes', 'CDInternalIndex', 'Quant Ion',
+       'Area (max)', 'Lipid Class', 'Features Found','KO_EV_1', 'KO_EV_2', 'KO_EV_3','WT_EV_2', 'WT_EV_3']]
+
+ko_ev_cols = [col for col in df.columns if col.startswith('KO_EV')]
+wt_ev_cols = [col for col in df.columns if col.startswith('WT_EV')]
+df_subset = df[ko_ev_cols + wt_ev_cols]
+display(df_subset.head())
+
+df_subset['mean_KO_EV'] = df_subset[[col for col in df_subset.columns if col.startswith('KO_EV')]].mean(axis=1)
+df_subset['mean_WT_EV'] = df_subset[[col for col in df_subset.columns if col.startswith('WT_EV')]].mean(axis=1)
+df_subset['log2_fold_change'] = df_subset['mean_WT_EV'] - df_subset['mean_KO_EV']
+
+from scipy.stats import ttest_ind
+
+p_values = []
+for index, row in df_subset.iterrows():
+    ko_ev_values = row[[col for col in df_subset.columns if col.startswith('KO_EV')]].dropna().values
+    wt_ev_values = row[[col for col in df_subset.columns if col.startswith('WT_EV')]].dropna().values
+    if len(ko_ev_values) > 1 and len(wt_ev_values) > 1: # Ensure there's enough data for a t-test
+        ttest_result = ttest_ind(ko_ev_values, wt_ev_values, equal_var=False)
+        p_values.append(ttest_result.pvalue)
+    else:
+        p_values.append(None) # Append None if t-test cannot be performed
+
+df_subset['p_value'] = p_values
+
+df['log2_fold_change'] = df_subset['log2_fold_change']
+df['p_value'] = df_subset['p_value']
+
+import pandas as pd
+
+df_kks = pd.read_csv('/content/HDHD5_Lipids_KKs.csv')
+
+df_kks = df_kks[df_kks['p_value'] < 0.05]
+
+
+################ MAKE MITOMICS VOLCANO PLOT WITH THRESHOLDS ################
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+
+# Calculate -log10(p_value) if not already present
+if '-log10_p_value' not in df_kks.columns:
+    df_kks['-log10_p_value'] = -np.log10(df_kks['p_value'])
+
+# Create the volcano plot
+plt.figure(figsize=(10, 8))
+sns.scatterplot(data=df_kks, x='log2fc', y='-log10_p_value', alpha=0.6)
+
+# Add labels and title
+plt.xlabel('Log2 Fold Change')
+plt.ylabel('-log10(p-value)')
+plt.title('MITOMICS Lipidomics HAP1 HDHD5 KO v.s. WT')
+
+plt.axhline(y=-np.log10(0.05), color='red', linestyle='--', label='p-value = 0.05')
+plt.axvline(x=0.5, color='grey', linestyle='--', label='Log2FC = 0.5')
+plt.axvline(x=-0.5, color='grey', linestyle='--', label='Log2FC = -0.5')
+plt.axvline(x=1, color='grey', linestyle='--', label='Log2FC = 1')
+plt.axvline(x=-1, color='grey', linestyle='--', label='Log2FC = -1')
+plt.axvline(x=2, color='grey', linestyle='--', label='Log2FC = 2')
+plt.axvline(x=-2, color='grey', linestyle='--', label='Log2FC = -2')
+
+
+plt.grid(True)
+plt.show()
+
+####################### MAKE VOLCANO PLOT FROM  MY DATA WITH HIGHLIGHED POINTS
+import matplotlib.pyplot as plt
+import numpy as np
+import seaborn as sns
+
+# Calculate -log10(p_value)
+df['-log10_p_value'] = -np.log10(df['p_value'])
+
+# Create the volcano plot
+plt.figure(figsize=(10, 8))
+
+# Separate data for highlighted points
+highlight_df = df[df['Annotation'].isin(df_kks[df_kks['upreg_0.5'] == True]['molecule_id'])].dropna(subset=['log2_fold_change', '-log10_p_value'])
+other_df = df[~df['Annotation'].isin(df_kks[df_kks['upreg_0.5'] == True]['molecule_id'])].dropna(subset=['log2_fold_change', '-log10_p_value'])
+
+
+sns.scatterplot(data=other_df, x='log2_fold_change', y='-log10_p_value', alpha=0.6, label='Other Lipids')
+sns.scatterplot(data=highlight_df, x='log2_fold_change', y='-log10_p_value', alpha=0.8, color='red', label='Highlighted Lipids')
+
+# Add labels to highlighted points
+for index, row in highlight_df.iterrows():
+    plt.text(row['log2_fold_change'], row['-log10_p_value'], row['Annotation'], fontsize=9, ha='right')
+
+
+# Add labels and title
+plt.xlabel('Log2 Fold Change')
+plt.ylabel('-log10(p-value)')
+plt.title('KO_EV v.s. WT_EV')
+
+plt.legend()
+plt.grid(True)
+plt.show() 
