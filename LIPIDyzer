@@ -25,10 +25,6 @@ comparisons = pd.read_excel('HDHD5_Comparisons.xlsx')
 # Col2: Control_Condition - This is the name of your sample. This must match one of the values in the "Name" column of your conditions spreadsheet. This is usually your control sample you are comparing to. i.e. HAP1_WT
 # Col3: Experiment - This is the name of the experiment, that you will use to identify the log2fc and pvalue of the comparison you are making (i.e. HDHD5_KO_vs_HAP1_WT).
 
-#degreaser = pd.read_csv('YKR_DegreaserResults.csv')
-#conditions = pd.read_excel('YKR_Conditions.xlsx')
-#comparisons = pd.read_excel('YKR_comparisons.xlsx')
-
 
 def normalize (df,conditions,sum_normalize):
   sample_columns = conditions['MergedName'].tolist()
