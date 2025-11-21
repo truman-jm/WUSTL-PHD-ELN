@@ -1,0 +1,266 @@
+from statsmodels.stats.multitest import multipletests
+import pandas as pd
+import numpy as np
+from scipy.stats import ttest_ind
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+
+degreaser = pd.read_csv('HDHD5_Rescue_Repeats_Degreaser_Results.csv')
+##### Degreaser is a csv file that is outputted from LipiDex2. Prior to uploading your degreaser file to this Colab notebook, you must identify which row is CoQ8
+# and label it as "CoQ8" in the "Annotation" column. The CoQ8 Internal standard typically has a RT of ~10.451 and a m/z of ~744.5923-ish.
+
+
+conditions = pd.read_excel('HDHD5_Conditions.xlsx')
+### Conditions is an excel spreadsheet with this format:
+# Col1: FileName- the file name that is from the LipiDex2 output
+# Col2: Name - the name you want to give the sample. i.e. HDHD5_KO
+# Col3: RepNum - the number replicate your sample is. i.e. 1
+
+
+comparisons = pd.read_excel('HDHD5_Comparisons.xlsx')
+#### Comparisons is an excel spreadsheet with this format: Test_Condition	Control_Condition	Experiment
+# Col1: Test_Condition - This is the name of your sample. This must match one of the values in the "Name" column of your conditions spreadsheet. This is usually the sample you are changing. i.e. HDHD5_KO
+# Col2: Control_Condition - This is the name of your sample. This must match one of the values in the "Name" column of your conditions spreadsheet. This is usually your control sample you are comparing to. i.e. HAP1_WT
+# Col3: Experiment - This is the name of the experiment, that you will use to identify the log2fc and pvalue of the comparison you are making (i.e. HDHD5_KO_vs_HAP1_WT).
+
+#degreaser = pd.read_csv('YKR_DegreaserResults.csv')
+#conditions = pd.read_excel('YKR_Conditions.xlsx')
+#comparisons = pd.read_excel('YKR_comparisons.xlsx')
+
+
+def normalize (df,conditions,sum_normalize):
+  sample_columns = conditions['MergedName'].tolist()
+
+  # Initialize QC DataFrame
+  qc_df = pd.DataFrame(index=sample_columns)
+  qc_df.index.name = 'Sample_ID'
+
+  # Get CoQ8 values for all samples
+  q8_row_original = df[df['Annotation']=='CoQ8'][sample_columns]
+  # Ensure it's a Series; if q8_row has multiple rows, take the first one
+  if not q8_row_original.empty:
+      raw_coq8_values = q8_row_original.iloc[0]
+  else:
+      # If CoQ8 is not found, populate with NaNs
+      raw_coq8_values = pd.Series(np.nan, index=sample_columns)
+
+  qc_df['RawCoQ8'] = raw_coq8_values
+
+  # Handle infinite values by replacing them with NaN for CoQ8 average calculation
+  q8_val_for_calc = raw_coq8_values.replace([np.inf, -np.inf], np.nan)
+
+  # Calculate the average of CoQ8 values across all samples
+  q8_avg = q8_val_for_calc.mean()
+
+  # Calculate CoQ8 Scaling Factors (sf)
+  coq8_sf = q8_avg / q8_val_for_calc
+  coq8_sf = coq8_sf.replace([np.inf, -np.inf], np.nan)
+  qc_df['CoQ8SF'] = coq8_sf
+
+  # Apply CoQ8 normalization to the main dataframe (modifies df in place)
+  for col in sample_columns:
+    if pd.notna(coq8_sf[col]):
+      df[col] = df[col] * coq8_sf[col]
+    else:
+      df[col] = np.nan # If scaling factor is NaN, set the column to NaN
+
+  # Calculate LipidAvg (average of each sample column after CoQ8 normalization)
+  qc_df['LipidAvg'] = df[sample_columns].mean()
+
+  # Calculate LipidSum (sum of each sample column after CoQ8 normalization)
+  qc_df['LipidSum'] = df[sample_columns].sum()
+
+  # Initialize SumAvgSF to NaN
+  qc_df['SumAvgSF'] = np.nan
+
+  if sum_normalize:
+    # Calculate sum of each sample column after CoQ8 normalization
+    sum_values_post_coq8_norm = df[sample_columns].sum()
+
+    # Calculate pan_average (average of these sums)
+    pan_average = sum_values_post_coq8_norm.mean()
+
+    # Calculate SumAvgSF (scaling factor for sum normalization)
+    sum_avg_sf = pan_average / sum_values_post_coq8_norm
+    qc_df['SumAvgSF'] = sum_avg_sf
+
+    # Apply sum normalization to the main dataframe
+    for col in sample_columns:
+        if pd.notna(sum_avg_sf[col]):
+            df[col] = df[col] * sum_avg_sf[col]
+        else:
+            df[col] = np.nan # Consistent handling for NaN scaling factor
+
+  return df, qc_df
+
+def log2_transform (df,conditions):
+   sample_columns = conditions['MergedName'].tolist()
+   # Apply log2 transformation, handling potential non-positive values
+   # Use map for element-wise operation (applymap is deprecated)
+   df[sample_columns] = df[sample_columns].map(lambda x: np.log2(x) if x > 0 else np.nan)
+   return df
+
+def generate_plots (df,conditions,comparisons, use_bh_pval_for_plots=False):
+  # Generate PCA plot
+  sample_columns = conditions['MergedName'].tolist()
+  df_pca_data = df[sample_columns].T.dropna()
+
+  scaler = StandardScaler()
+  scaled_data = scaler.fit_transform(df_pca_data)
+
+  pca = PCA(n_components=2)
+  pca_components = pca.fit_transform(scaled_data)
+
+  pca_df = pd.DataFrame(data=pca_components, columns=['PC1', 'PC2'])
+  pca_df['MergedName'] = df_pca_data.index
+  pca_df = pd.merge(pca_df, conditions[['MergedName', 'Name']], on='MergedName')
+
+  plt.figure(figsize=(10, 8))
+  sns.scatterplot(data=pca_df, x='PC1', y='PC2', hue='Name', s=100)
+  # Add labels for each point
+  for i, row in pca_df.iterrows():
+      plt.text(row['PC1'], row['PC2'], row['MergedName'], fontsize=8)
+  plt.xlabel(f'Principal Component 1 ({pca.explained_variance_ratio_[0]*100:.2f}%)')
+  plt.ylabel(f'Principal Component 2 ({pca.explained_variance_ratio_[1]*100:.2f}%)')
+  plt.title('PCA of Lipidomics Data')
+  plt.grid(True)
+  plt.show()
+
+  # Generate multiple volcano plots
+  p_value_threshold = 0.05
+  log2fc_threshold = .7
+
+  for index, row in comparisons.iterrows():
+    experiment_name = row['Experiment']
+    log2fc_col = f'{experiment_name}_log2fc'
+    unadjusted_pval_col = f'{experiment_name}_pval'
+    bh_pval_col = f'{experiment_name}_bh_pval'
+
+    # Determine which p-value column to use
+    if use_bh_pval_for_plots and bh_pval_col in df.columns:
+        current_pval_col = bh_pval_col
+        pval_label = 'BH-adjusted P-value'
+    else:
+        current_pval_col = unadjusted_pval_col
+        pval_label = 'Unadjusted P-value'
+
+    if log2fc_col in df.columns and current_pval_col in df.columns:
+      plt.figure(figsize=(10, 8))
+      # Handle cases where current_pval_col might have NaNs or 0s after adjustment which would cause issues with log10
+      plot_pvals = df[current_pval_col].replace(0, np.finfo(float).tiny) # Replace 0 with smallest float for log10
+      plot_pvals = -np.log10(plot_pvals)
+
+      sns.scatterplot(data=df, x=log2fc_col, y=plot_pvals, alpha=0.6)
+
+      # Identify significant points
+      significant_lipids = df[
+          (df[current_pval_col] < p_value_threshold) &
+          ((df[log2fc_col] > log2fc_threshold) | (df[log2fc_col] < -log2fc_threshold))
+      ]
+
+      # Add labels to significant points
+      for idx, lipid_row in significant_lipids.iterrows():
+          plt.text(lipid_row[log2fc_col], plot_pvals.loc[idx], lipid_row['Annotation'], fontsize=9)
+
+
+      # Add threshold lines
+      plt.axhline(y=-np.log10(p_value_threshold), color='r', linestyle='--', label=f'{pval_label} < {p_value_threshold}')
+      plt.axvline(x=log2fc_threshold, color='b', linestyle='--', label=f'log2FC > {log2fc_threshold}')
+      plt.axvline(x=-log2fc_threshold, color='b', linestyle='--', label=f'log2FC < -{log2fc_threshold}')
+
+      # Add labels and title
+      plt.xlabel('Log2 Fold Change')
+      plt.ylabel(f'-log10({pval_label})')
+      plt.title(f'Volcano Plot: {experiment_name} (Using {pval_label})')
+      plt.grid(True)
+      plt.legend()
+      plt.show()
+    else:
+      print(f"Warning: Columns {log2fc_col} or {current_pval_col} not found for {experiment_name}. Skipping volcano plot.")
+
+  return df
+
+def fold_change_pval (df,conditions,comparisons, bh_fdr_adjust=False):
+  for index, row in comparisons.iterrows():
+    test_condition = row['Test_Condition']
+    control_condition = row['Control_Condition']
+    experiment_name = row['Experiment']
+
+    test_cols = conditions[conditions['Name'] == test_condition]['MergedName'].tolist()
+    control_cols = conditions[conditions['Name'] == control_condition]['MergedName'].tolist()
+
+    # Calculate the mean for test and control groups
+    test_means = df[test_cols].mean(axis=1)
+    control_means = df[control_cols].mean(axis=1)
+
+    # Calculate log2 fold change (Test - Control since values are already log2 transformed)
+    df[f'{experiment_name}_log2fc'] = test_means - control_means
+
+    # Calculate unadjusted p-value
+    # Ensure that there are enough non-NaN values for t-test, otherwise assign NaN
+    df[f'{experiment_name}_pval'] = df.apply(
+        lambda r: ttest_ind(
+            pd.to_numeric(r[test_cols], errors='coerce').dropna(),
+            pd.to_numeric(r[control_cols], errors='coerce').dropna()
+        )[1] if len(pd.to_numeric(r[test_cols], errors='coerce').dropna()) >= 2 and len(pd.to_numeric(r[control_cols], errors='coerce').dropna()) >= 2 else np.nan,
+        axis=1
+    )
+
+    if bh_fdr_adjust:
+      # Filter out NaNs for adjustment, keep track of original index
+      p_values_to_adjust = df[f'{experiment_name}_pval'].dropna()
+      if not p_values_to_adjust.empty:
+        # Apply Benjamini-Hochberg FDR correction
+        reject, pvals_corrected, alphacSidak, alphacBonf = multipletests(p_values_to_adjust, method='fdr_bh')
+        # Map corrected p-values back to the original DataFrame
+        df[f'{experiment_name}_bh_pval'] = np.nan # Initialize new column with NaNs
+        df.loc[p_values_to_adjust.index, f'{experiment_name}_bh_pval'] = pvals_corrected
+      else:
+        df[f'{experiment_name}_bh_pval'] = np.nan # If no p-values to adjust, all adjusted are NaN
+  return df
+
+
+def lipidyzer (df,conditions,comparisons, sum_normalize, make_plots, bh_fdr_adjust=False, use_bh_pval_for_plots=False):
+  ### RENAME degreaser results
+  # Create new column names by merging 'Name' and 'RepNum'
+  conditions['MergedName'] = conditions['Name'] + '_' + conditions['RepNum'].astype(str)
+  # Create a dictionary mapping old column names (from conditions['FileName'])
+  # to new column names (from the merged 'MergedName' column)
+  rename_map = dict(zip(conditions['FileName'], conditions['MergedName']))
+  df = df.rename(columns=rename_map)
+  ### FILTER degreaser results (remove duplicates etc.)
+  df = df[df['KeepID'] == True]
+  df['Is_Duplicate'] = df.duplicated(subset=['Annotation'], keep=False)
+  df_no_duplicates = df.sort_values(by=['Annotation', 'RTpredictionDifference']).drop_duplicates(subset=['Annotation'], keep='first')
+  # Removed unused variables dropped_rows, duplicates, duplicates_sorted
+  df = df_no_duplicates
+
+  ## ALWAYS normalize data to CoQ8 levels!
+  # The normalize function now returns both the normalized dataframe and the QC dataframe
+  df, qc_table = normalize(df,conditions,sum_normalize)
+
+  print("Successfully normalized data")
+  print("QC Table:")
+  display(qc_table) # Display the new QC DataFrame here. This replaces the various prints and displays.
+
+
+  ## Log2 Transform data
+  df = log2_transform(df,conditions)
+  print("Successfully log 2 transformed data")
+
+  ### Calculate log2fc and pvalue between conditions
+  df = fold_change_pval(df,conditions,comparisons, bh_fdr_adjust=bh_fdr_adjust)
+  print("Calculated log2fc and unadjusted pval")
+  if bh_fdr_adjust:
+      print("Also calculated BH-adjusted p-values.")
+
+  if make_plots:
+    df = generate_plots(df,conditions,comparisons, use_bh_pval_for_plots=use_bh_pval_for_plots)
+    print("Generated plots")
+
+
+  return df, qc_table
+
+lipidyzer_df, qc_table  = lipidyzer(degreaser,conditions,comparisons,sum_normalize=True, make_plots = True, bh_fdr_adjust=True, use_bh_pval_for_plots=True)
